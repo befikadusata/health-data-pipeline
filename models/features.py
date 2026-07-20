@@ -43,14 +43,18 @@ def build_anomaly_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
 
 
 def build_forecast_dataset(
-    df: pd.DataFrame, facilities: pd.DataFrame
+    df: pd.DataFrame, facilities: pd.DataFrame, require_target: bool = True
 ) -> pd.DataFrame:
     """One row per (facility_id, report_month) with lag/rolling features and a
-    forward-looking target. Rows without enough history for the lags, or
-    without a target that far in the future, are dropped (both are true NaNs,
-    not injected data-quality issues) - annotate the drop counts in the eval
-    report shown in models/forecast.py so the built-in class carve-outs stay
-    visible rather than silently shrinking the dataset."""
+    forward-looking target. Rows without enough history for the lags are
+    dropped (a true NaN, not an injected data-quality issue) - annotate the
+    drop counts in the eval report shown in models/forecast.py so the
+    built-in class carve-outs stay visible rather than silently shrinking the
+    dataset.
+
+    require_target=False is for scoring (models/score.py, api/main.py): the
+    whole point of scoring the most recent months is that the actual 3-months-
+    ahead value doesn't exist yet, so rows can't be dropped for lacking it."""
     df = df.merge(
         facilities[["facility_id", "baseline_patient_volume", "region"]], on="facility_id"
     )
@@ -72,7 +76,7 @@ def build_forecast_dataset(
         + [f"patients_tested_lag_{lag}" for lag in FORECAST_LAGS]
         + ["suppression_pct_roll3_mean", "month_of_year", "baseline_patient_volume"]
     )
-    required = feature_cols + ["target_suppression_pct"]
+    required = feature_cols + (["target_suppression_pct"] if require_target else [])
     out = out.dropna(subset=required).reset_index(drop=True)
     out.attrs["feature_cols"] = feature_cols
     return out

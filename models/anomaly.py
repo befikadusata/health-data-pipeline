@@ -158,11 +158,10 @@ def train_and_evaluate() -> dict:
         )
         mlflow.log_artifact(f"{OUTPUT_DIR}/anomaly_eval.json")
         mlflow.log_artifact(f"{OUTPUT_DIR}/anomaly_scored.csv")
-        mlflow.sklearn.log_model(
-            model,
-            name="model",
-            registered_model_name="health-anomaly-detector",
-        )
+        # Logged but not registered here - `register` is a separate DAG task
+        # (models/register.py) that promotes a specific run to the Model
+        # Registry, so training a candidate and promoting it are distinct steps.
+        mlflow.sklearn.log_model(model, name="model")
         eval_metrics["mlflow_run_id"] = run.info.run_id
 
     return eval_metrics

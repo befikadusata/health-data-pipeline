@@ -1,0 +1,163 @@
+# Run from this directory: `docker compose up`. Relative paths below (../) are
+# relative to this file, so the whole repo root gets bind-mounted into the
+# services that need it. Reads infra/.env for AIRFLOW_UID automatically.
+#
+# Two separate Postgres instances on purpose: `postgres` is the health-program
+# warehouse (facilities/monthly_reports/scored_reports); `airflow-db` is
+# Airflow's own metadata store. Keeping them apart means Airflow's schema
+# never shares a database with the domain data a reviewer would actually
+# query.
+
+x-airflow-common: &airflow-common
+  build:
+    context: ..
+    dockerfile: infra/Dockerfile.airflow
+  user: "${AIRFLOW_UID:-50000}:0"
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/project/dags
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+    AIRFLOW__WEBSERVER__SECRET_KEY: health-pipeline-demo-secret-key
+    DATABASE_URL: postgresql+psycopg://health:health@postgres:5432/health_pipeline
+    MLFLOW_TRACKING_URI: http://mlflow:5000
+  volumes:
+    - ../:/opt/airflow/project
+    - airflow_logs:/opt/airflow/logs
+  depends_on:
+    postgres:
+      condition: service_healthy
+    airflow-db:
+      condition: service_healthy
+    mlflow:
+      condition: service_started
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: health
+      POSTGRES_PASSWORD: health
+      POSTGRES_DB: health_pipeline
+    ports:
+      - "5442:5432"  # distinct from the local-dev container's 5433
+    volumes:
+      - warehouse_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U health -d health_pipeline"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  airflow-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mlflow:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.mlflow
+    environment:
+      # mlflow 3's Host-header check (DNS-rebinding guard) only allowlists
+      # localhost/private-IP patterns by default, not compose service names -
+      # every other service reaches this one as http://mlflow:5000.
+      MLFLOW_SERVER_ALLOWED_HOSTS: "mlflow,mlflow:*"
+    ports:
+      - "5001:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.app
+    environment:
+      DATABASE_URL: postgresql+psycopg://health:health@postgres:5432/health_pipeline
+    volumes:
+      - ../:/app
+    working_dir: /app
+    command: ["python", "-m", "alembic", "-c", "warehouse/alembic.ini", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  airflow-init:
+    <<: *airflow-common
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-db:
+        condition: service_healthy
+    command: ["bash", "-c", "airflow db migrate && airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true"]
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.app
+    environment:
+      DATABASE_URL: postgresql+psycopg://health:health@postgres:5432/health_pipeline
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../:/app
+    working_dir: /app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mlflow:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+volumes:
+  warehouse_pgdata:
+  airflow_pgdata:
+  mlflow_data:
+  airflow_logs:

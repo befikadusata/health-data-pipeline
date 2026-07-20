@@ -112,11 +112,9 @@ def train_and_evaluate() -> dict:
         mlflow.log_artifact(f"{OUTPUT_DIR}/forecast_eval.json")
         mlflow.log_artifact(f"{OUTPUT_DIR}/forecast_predictions.csv")
         mlflow.log_artifact(f"{OUTPUT_DIR}/forecast_shap_importance.csv")
-        mlflow.sklearn.log_model(
-            model,
-            name="model",
-            registered_model_name="health-suppression-forecaster",
-        )
+        # Logged but not registered here - see models/anomaly.py's train step
+        # for why train/register are kept as separate DAG tasks.
+        mlflow.sklearn.log_model(model, name="model")
         eval_metrics["mlflow_run_id"] = run.info.run_id
 
     return eval_metrics

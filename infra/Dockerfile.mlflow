@@ -1,0 +1,18 @@
+# Dedicated MLflow tracking server, backed by SQLite (registry requires a
+# database-backed store - see models/mlflow_utils.py). Artifacts are proxied
+# through the server (mlflow-artifacts:/ + --serve-artifacts) rather than a
+# shared volume, since train/register/score/api are separate containers with
+# no common filesystem.
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir mlflow==3.14.0
+
+WORKDIR /mlflow
+EXPOSE 5000
+
+CMD ["mlflow", "server", \
+     "--backend-store-uri", "sqlite:////mlflow/mlflow.db", \
+     "--default-artifact-root", "mlflow-artifacts:/", \
+     "--artifacts-destination", "/mlflow/artifacts", \
+     "--serve-artifacts", \
+     "--host", "0.0.0.0", "--port", "5000"]

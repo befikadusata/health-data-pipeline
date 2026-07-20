@@ -1,0 +1,13 @@
+# Streamlit dashboard, sharing the same image pattern as Dockerfile.app - see
+# that file's docstring for why the full project is bind-mounted over this at
+# runtime in docker-compose.yml.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY infra/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+COPY . /app
+
+CMD ["streamlit", "run", "dashboard/app.py", "--server.address", "0.0.0.0", "--server.port", "8501"]

@@ -43,6 +43,13 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      - name: Check infra/requirements.txt matches uv.lock
+        # Every Dockerfile installs from this file, not uv.lock directly (see its
+        # own header) - catch drift here instead of only in a built image.
+        run: |
+          uv export --no-hashes --no-dev --format requirements-txt -o infra/requirements.txt
+          git diff --exit-code -- infra/requirements.txt
+
       - name: Lint
         run: uv run ruff check .
 

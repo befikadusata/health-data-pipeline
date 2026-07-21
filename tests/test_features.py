@@ -55,3 +55,23 @@ def test_build_forecast_dataset_require_target_false_keeps_recent_rows():
     assert len(without_target) > len(with_target)
     assert without_target["target_suppression_pct"].isna().any()
     assert not with_target["target_suppression_pct"].isna().any()
+
+
+def test_build_forecast_dataset_lag_features_point_backward_not_forward():
+    """An off-by-one in the shift() direction would leak future values into
+    training - lag_N for a given month must equal the value from N months
+    *earlier*, never the current or a later month."""
+    values = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+    df = _monthly_reports(n_months=6, suppression_values=values)
+    facilities = pd.DataFrame(
+        [{"facility_id": "CL-001", "baseline_patient_volume": 100, "region": "North"}]
+    )
+
+    dataset = build_forecast_dataset(df, facilities, require_target=False)
+
+    # April (index 3, value 40.0): lag_1/2/3 should be March/Feb/Jan's values.
+    april = dataset[dataset["report_month"] == df["report_month"].iloc[3]].iloc[0]
+    assert april["suppression_pct"] == pytest.approx(40.0)
+    assert april["suppression_pct_lag_1"] == pytest.approx(30.0)
+    assert april["suppression_pct_lag_2"] == pytest.approx(20.0)
+    assert april["suppression_pct_lag_3"] == pytest.approx(10.0)

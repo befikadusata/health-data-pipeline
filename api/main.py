@@ -94,8 +94,15 @@ def score_facility(facility_id: str) -> FacilityScoreResponse:
 
     anomaly_model = MODELS["anomaly_model"]
     features, z_scores = build_anomaly_features(facility_df)
-    raw_scores = anomaly_model.decision_function(features[ANOMALY_FIELDS])
-    predictions = anomaly_model.predict(features[ANOMALY_FIELDS])
+    try:
+        raw_scores = anomaly_model.decision_function(features[ANOMALY_FIELDS])
+        predictions = anomaly_model.predict(features[ANOMALY_FIELDS])
+    except (ValueError, KeyError) as exc:
+        logger.exception("anomaly model inference failed for facility_id=%s", facility_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Anomaly model inference failed - possible feature/schema mismatch",
+        ) from exc
     flagged = pd.Series(predictions == -1, index=facility_df.index)
     reasons_by_row = build_reasons(z_scores, flagged)
 
@@ -109,9 +116,18 @@ def score_facility(facility_id: str) -> FacilityScoreResponse:
         match = forecast_dataset[forecast_dataset["report_month"] == report_month]
         if not match.empty:
             feature_cols = forecast_dataset.attrs["feature_cols"]
-            forecast_value = float(
-                MODELS["forecast_model"].predict(match[feature_cols])[0]
-            )
+            try:
+                forecast_value = float(
+                    MODELS["forecast_model"].predict(match[feature_cols])[0]
+                )
+            except (ValueError, KeyError) as exc:
+                logger.exception(
+                    "forecast model inference failed for facility_id=%s", facility_id
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Forecast model inference failed - possible feature/schema mismatch",
+                ) from exc
 
     return FacilityScoreResponse(
         facility_id=facility_id,

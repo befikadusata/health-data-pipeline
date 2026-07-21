@@ -32,6 +32,7 @@ from pathlib import Path
 import mlflow
 import mlflow.sklearn
 import pandas as pd
+from mlflow.models import infer_signature
 from sklearn.ensemble import IsolationForest
 
 from data_gen.config import SEED
@@ -163,7 +164,13 @@ def train_and_evaluate() -> dict:
         # Logged but not registered here - `register` is a separate DAG task
         # (models/register.py) that promotes a specific run to the Model
         # Registry, so training a candidate and promoting it are distinct steps.
-        mlflow.sklearn.log_model(model, name="model")
+        signature = infer_signature(features[ANOMALY_FIELDS], predictions)
+        mlflow.sklearn.log_model(
+            model,
+            name="model",
+            signature=signature,
+            input_example=features[ANOMALY_FIELDS].head(5),
+        )
         eval_metrics["mlflow_run_id"] = run.info.run_id
 
     return eval_metrics

@@ -22,6 +22,7 @@ import mlflow.sklearn
 import numpy as np
 import pandas as pd
 import shap
+from mlflow.models import infer_signature
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error
 
@@ -116,7 +117,13 @@ def train_and_evaluate() -> dict:
         mlflow.log_artifact(f"{OUTPUT_DIR}/forecast_shap_importance.csv")
         # Logged but not registered here - see models/anomaly.py's train step
         # for why train/register are kept as separate DAG tasks.
-        mlflow.sklearn.log_model(model, name="model")
+        signature = infer_signature(test[feature_cols], predictions)
+        mlflow.sklearn.log_model(
+            model,
+            name="model",
+            signature=signature,
+            input_example=test[feature_cols].head(5),
+        )
         eval_metrics["mlflow_run_id"] = run.info.run_id
 
     return eval_metrics

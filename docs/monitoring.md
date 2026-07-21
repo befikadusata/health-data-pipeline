@@ -55,6 +55,16 @@ should implement, listed in priority order:
    `prometheus-fastapi-instrumentator`) and alert on elevated 5xx rates or the
    `/health` check reporting `models_loaded: false`.
 
+## Interpretation caveats
+
+- **A flagged month isn't a frozen fact.** Anomaly z-scores are computed against a
+  facility's *entire* reporting history — past **and** future relative to the row being
+  scored (see `models/features.py::build_anomaly_features`). That's intentional for an
+  unsupervised detector, but it means a given clinic-month's flag (and its "why flagged"
+  reasons) can change on a later `score` run as new months arrive and shift that
+  facility's mean/std. Don't read `scored_reports` as an immutable audit log —
+  re-running `score` can silently rewrite prior months' results.
+
 ## Suggested tooling for a real rollout
 
 - **Metrics/dashboards:** Prometheus + Grafana (or a managed equivalent), scraping the

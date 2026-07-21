@@ -3,7 +3,7 @@ name: CI
 # Single lint+test+build path (see project-brief.md's degrade-gracefully
 # order: drop the CI matrix before dropping any of lint/test/build). No
 # registry push - infra/terraform's ECR repo is a stub, not applied, so
-# there's nowhere to push to yet; this just proves the api image builds.
+# there's nowhere to push to yet; this just proves all four images build.
 on:
   push:
     branches: [main]
@@ -68,3 +68,27 @@ jobs:
           file: infra/Dockerfile.app
           push: false
           tags: health-pipeline-api:ci
+
+      - name: Build dashboard image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile.dashboard
+          push: false
+          tags: health-pipeline-dashboard:ci
+
+      - name: Build airflow image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile.airflow
+          push: false
+          tags: health-pipeline-airflow:ci
+
+      - name: Build mlflow image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile.mlflow
+          push: false
+          tags: health-pipeline-mlflow:ci

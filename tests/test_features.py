@@ -2,7 +2,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from models.features import ANOMALY_FIELDS, build_anomaly_features, build_forecast_dataset
+from models.features import (
+    ANOMALY_FIELDS,
+    MIN_HISTORY_MONTHS,
+    build_anomaly_features,
+    build_forecast_dataset,
+)
 
 
 def _monthly_reports(n_months=6, facility_id="CL-001", suppression_values=None):
@@ -39,6 +44,21 @@ def test_build_anomaly_features_zero_std_does_not_divide_by_zero():
     _, z_scores = build_anomaly_features(df)
     assert (z_scores["suppression_pct"] == 0.0).all()
     assert set(z_scores.columns) == set(ANOMALY_FIELDS)
+
+
+def test_build_anomaly_features_flags_insufficient_history():
+    """A facility with fewer than MIN_HISTORY_MONTHS rows has an undefined
+    z-score - it must be marked via attrs, not silently reported as normal."""
+    assert MIN_HISTORY_MONTHS == 2
+    sparse = _monthly_reports(n_months=1, facility_id="CL-NEW", suppression_values=[99.9])
+    established = _monthly_reports(n_months=6, facility_id="CL-001")
+    df = pd.concat([sparse, established], ignore_index=True)
+
+    _, z_scores = build_anomaly_features(df)
+
+    insufficient = z_scores.attrs["insufficient_history"]
+    assert insufficient.iloc[0]  # the lone CL-NEW row
+    assert not insufficient.iloc[1:].any()  # every CL-001 row has enough history
 
 
 def test_build_forecast_dataset_require_target_false_keeps_recent_rows():

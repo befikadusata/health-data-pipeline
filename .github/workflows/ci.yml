@@ -12,6 +12,26 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    # Backs tests/test_db_integration.py's upsert-idempotency checks - the
+    # only thing those tests need is a reachable Postgres; TEST_DATABASE_URL
+    # below points them at this service instead of their localhost:5442
+    # default (the docker-compose `postgres` service, not available here).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: health
+          POSTGRES_PASSWORD: health
+          POSTGRES_DB: health_pipeline
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U health -d health_pipeline"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://health:health@localhost:5432/health_pipeline
     steps:
       - uses: actions/checkout@v4
 
@@ -25,6 +45,11 @@ jobs:
 
       - name: Lint
         run: uv run ruff check .
+
+      - name: Apply DB migrations
+        run: uv run alembic -c warehouse/alembic.ini upgrade head
+        env:
+          DATABASE_URL: postgresql+psycopg://health:health@localhost:5432/health_pipeline
 
       - name: Test
         run: uv run pytest -q

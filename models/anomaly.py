@@ -36,7 +36,12 @@ from mlflow.models import infer_signature
 from sklearn.ensemble import IsolationForest
 
 from data_gen.config import SEED
-from models.features import ANOMALY_FIELDS, build_anomaly_features, load_monthly_reports
+from models.features import (
+    ANOMALY_FIELDS,
+    MIN_HISTORY_MONTHS,
+    build_anomaly_features,
+    load_monthly_reports,
+)
 from models.mlflow_utils import configure_mlflow
 from warehouse.db import get_engine
 
@@ -68,7 +73,7 @@ def build_reasons(z_scores: pd.DataFrame, flagged_mask: pd.Series) -> pd.Series:
 
 def evaluate_against_ground_truth(scored: pd.DataFrame) -> dict:
     gt = pd.read_csv(GROUND_TRUTH_PATH, parse_dates=["report_month"])
-    candidates = gt[gt["is_anomaly_candidate"]].copy()
+    candidates = gt[gt["is_anomaly_candidate"]].drop_duplicates(["facility_id", "report_month"])
 
     merged = scored.merge(
         candidates[["facility_id", "report_month"]].assign(is_candidate=True),
@@ -77,7 +82,7 @@ def evaluate_against_ground_truth(scored: pd.DataFrame) -> dict:
     )
     merged["is_candidate"] = merged["is_candidate"].fillna(False).astype(bool)
 
-    total_candidates_injected = candidates.drop_duplicates(["facility_id", "report_month"]).shape[0]
+    total_candidates_injected = candidates.shape[0]
     candidates_present = int(merged["is_candidate"].sum())
     removed_upstream = total_candidates_injected - candidates_present
 
@@ -110,6 +115,16 @@ def train_and_evaluate() -> dict:
     df = load_monthly_reports(engine)
 
     features, z_scores = build_anomaly_features(df)
+    insufficient_history = z_scores.attrs["insufficient_history"]
+    n_excluded = int(insufficient_history.sum())
+    if n_excluded:
+        print(
+            f"excluding {n_excluded} facility-months with < {MIN_HISTORY_MONTHS} months of "
+            "history from training/scoring - z-score is undefined, not confirmed normal"
+        )
+    df = df.loc[~insufficient_history].reset_index(drop=True)
+    features = features.loc[~insufficient_history].reset_index(drop=True)
+    z_scores = z_scores.loc[~insufficient_history].reset_index(drop=True)
 
     model = IsolationForest(
         n_estimators=200,
@@ -127,6 +142,7 @@ def train_and_evaluate() -> dict:
     scored["reasons"] = build_reasons(z_scores, scored["is_anomaly"])
 
     eval_metrics = evaluate_against_ground_truth(scored)
+    eval_metrics["excluded_insufficient_history"] = n_excluded
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     scored_out = scored.copy()
@@ -157,6 +173,7 @@ def train_and_evaluate() -> dict:
                 "candidates_removed_upstream_by_validation": eval_metrics[
                     "candidates_removed_upstream_by_validation"
                 ],
+                "excluded_insufficient_history": n_excluded,
             }
         )
         mlflow.log_artifact(f"{OUTPUT_DIR}/anomaly_eval.json")

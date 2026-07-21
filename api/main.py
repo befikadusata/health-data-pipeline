@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from models.anomaly import build_reasons
 from models.features import (
     ANOMALY_FIELDS,
+    MIN_HISTORY_MONTHS,
     build_anomaly_features,
     build_forecast_dataset,
     load_facilities,
@@ -94,6 +95,14 @@ def score_facility(facility_id: str) -> FacilityScoreResponse:
 
     anomaly_model = MODELS["anomaly_model"]
     features, z_scores = build_anomaly_features(facility_df)
+    if z_scores.attrs["insufficient_history"].any():
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"facility_id={facility_id} has fewer than {MIN_HISTORY_MONTHS} monthly "
+                "reports - not enough history for a meaningful anomaly score yet"
+            ),
+        )
     try:
         raw_scores = anomaly_model.decision_function(features[ANOMALY_FIELDS])
         predictions = anomaly_model.predict(features[ANOMALY_FIELDS])

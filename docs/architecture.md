@@ -10,6 +10,7 @@ flowchart LR
     ingest --> validate
     validate --> train_anomaly
     validate --> train_forecast
+    validate --> check_quality_alert
     train_anomaly --> register_anomaly
     train_forecast --> register_forecast
     register_anomaly --> score
@@ -27,6 +28,10 @@ flowchart LR
     end
 ```
 
+- **check_quality_alert** is a sibling of `train`, not a blocking predecessor: it reads
+  the `validate` task's own report and fails (visibly, in the Airflow UI) if
+  `alert_quarantine_rate_exceeded` is set, without stopping `train`/`score`/`publish` on
+  the rows that did pass validation — see `docs/monitoring.md`.
 - **train** and **score** are separate tasks on purpose: `train` is a scheduled batch job
   that logs a candidate model to MLflow; `register` promotes it to the Model Registry;
   `score` pulls the *registered* model and writes flags/forecasts. `api/main.py` loads
@@ -42,7 +47,7 @@ flowchart LR
 ```
 data_gen/generate.py           (seeded synthetic generator)
   → data_gen/output/*.csv       (facilities, raw reports, ground-truth anomaly ledger)
-  → warehouse.raw_monthly_reports   (ingest task — append-only landing zone)
+  → warehouse.raw_monthly_reports   (ingest task — full-refresh landing zone)
   → validation/checks.py            (validate task — semantic checks)
       ├─→ warehouse.monthly_reports      (clean fact table)
       └─→ warehouse.quarantined_reports  (rejected rows + reason)

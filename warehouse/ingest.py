@@ -1,9 +1,13 @@
 """Loads the data_gen CSV outputs into the warehouse.
 
 This simulates the `ingest` DAG task: facilities are upserted (idempotent on
-facility_id), raw monthly reports are appended to the raw landing zone tagged
-with run_id/dag_logical_date for lineage. No cleaning happens here - that's
-the validate task's job (see validation/checks.py).
+facility_id). The reports CSV is a full-history snapshot (not an incremental
+per-period extract), so the raw landing zone is a full-refresh table: each
+ingest replaces its entire contents with the latest load, tagged with
+run_id/dag_logical_date for lineage. Loading the same snapshot on every run
+without this refresh would otherwise leave every prior run's full copy of the
+raw rows sitting in the table forever. No cleaning happens here - that's the
+validate task's job (see validation/checks.py).
 """
 
 from __future__ import annotations
@@ -59,14 +63,13 @@ def load_raw_reports(
     return len(rows)
 
 
-def clear_run(engine, run_id: str) -> None:
-    """Idempotency for the raw landing zone: re-running the same run_id
-    replaces its rows instead of appending duplicates on top."""
+def clear_raw_landing_zone(engine) -> None:
+    """Full-refresh for the raw landing zone: the reports CSV is always the
+    complete history snapshot, so every ingest clears *all* prior rows (not
+    just this run_id's) before loading, rather than accumulating a redundant
+    full copy of the same ~1,200 rows on top of every previous run's."""
     with engine.begin() as conn:
-        conn.execute(
-            text("DELETE FROM raw_monthly_reports WHERE run_id = :run_id"),
-            {"run_id": run_id},
-        )
+        conn.execute(text("DELETE FROM raw_monthly_reports"))
 
 
 def main() -> None:
@@ -89,7 +92,7 @@ def main() -> None:
     raw_df = pd.read_csv(args.reports_csv, parse_dates=["report_month"])
     raw_df["report_month"] = raw_df["report_month"].dt.date
 
-    clear_run(engine, run_id)
+    clear_raw_landing_zone(engine)
     n_raw = load_raw_reports(engine, raw_df, run_id, logical_date, args.reports_csv)
 
     print(f"run_id={run_id}")

@@ -228,6 +228,9 @@ next quarter — no jargon, meant to be readable by a non-technical program mana
    apply on merge to main.
 6. Validate the anomaly detector and forecaster against a real (larger, longer-history)
    dataset before trusting the reported metrics at production scale.
+7. Rotate every credential in `infra/docker-compose.yml` before any real deployment —
+   the Postgres passwords, Airflow's `admin/admin` login, and
+   `AIRFLOW__WEBSERVER__SECRET_KEY` are hardcoded for local-demo convenience only.
 
 ## Repo layout
 

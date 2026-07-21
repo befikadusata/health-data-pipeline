@@ -14,6 +14,7 @@ import pandas as pd
 from sqlalchemy import text
 
 ANOMALY_FIELDS = ["patients_tested", "suppression_pct", "drug_stock_level", "reporting_delay_days"]
+MIN_HISTORY_MONTHS = 2  # a z-score needs at least 2 points to have a defined std
 FORECAST_TARGET = "suppression_pct"
 FORECAST_HORIZON_MONTHS = 3
 FORECAST_LAGS = [1, 2, 3]
@@ -32,13 +33,24 @@ def load_facilities(engine) -> pd.DataFrame:
 def build_anomaly_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Returns (features, z_scores) both indexed like df. z_scores are kept
     separately (not just as the feature matrix) because they double as the
-    plain-language "why flagged" explanation for the dashboard."""
+    plain-language "why flagged" explanation for the dashboard.
+
+    A facility with fewer than MIN_HISTORY_MONTHS rows has an undefined
+    z-score (no real history to compare against) - those get filled to 0.0
+    like any other zero-std case so the model still has a numeric feature to
+    fit/predict on, but that 0.0 means "can't judge yet", not "confirmed
+    normal". Callers that report is_anomaly to a user should treat rows
+    flagged via z_scores.attrs["insufficient_history"] as unscored rather
+    than trusting a clean read.
+    """
     z_scores = pd.DataFrame(index=df.index)
+    history_count = df.groupby("facility_id")["facility_id"].transform("count")
     for field in ANOMALY_FIELDS:
         grouped = df.groupby("facility_id")[field]
         mean = grouped.transform("mean")
         std = grouped.transform("std").replace(0, np.nan)
         z_scores[field] = ((df[field] - mean) / std).fillna(0.0)
+    z_scores.attrs["insufficient_history"] = history_count < MIN_HISTORY_MONTHS
     return z_scores.copy(), z_scores
 
 

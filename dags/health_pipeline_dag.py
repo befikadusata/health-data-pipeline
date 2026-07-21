@@ -105,6 +105,27 @@ with DAG(
             "validation.run", "--run-id", pipeline_run_id, "--dag-logical-date", logical_date_str
         )
 
+    @task(retries=0)
+    def check_quality_alert(pipeline_run_id: str) -> None:
+        """Surfaces validate's alert_quarantine_rate_exceeded flag as a failed,
+        clearly-visible task instead of a line in a report nobody reads. Kept
+        as a sibling of train/score (not a blocking predecessor) so the
+        pipeline's "quarantine + continue + alert" policy holds: a bad
+        quarantine rate flags this run for attention without stopping
+        training/scoring on the rows that did pass validation. retries=0
+        because retrying doesn't change the underlying data-quality reading.
+        """
+        report_path = (
+            Path(PROJECT_DIR) / "validation" / "output" / f"{pipeline_run_id}_report.json"
+        )
+        report = json.loads(report_path.read_text())
+        if report["alert_quarantine_rate_exceeded"]:
+            raise RuntimeError(
+                f"Quarantine rate {report['quarantine_rate']:.1%} exceeds the alert "
+                f"threshold for run {pipeline_run_id} - see "
+                f"validation/output/{pipeline_run_id}_report.json"
+            )
+
     with TaskGroup(group_id="train") as train_group:
 
         @task(task_id="train_anomaly")
@@ -184,8 +205,10 @@ with DAG(
 
     ingest_task = ingest(pipeline_run_id="{{ run_id }}", logical_date_str="{{ ds }}")
     validate_task = validate(pipeline_run_id="{{ run_id }}", logical_date_str="{{ ds }}")
+    check_quality_alert_task = check_quality_alert(pipeline_run_id="{{ run_id }}")
     score_task = score(pipeline_run_id="{{ run_id }}", logical_date_str="{{ ds }}")
     publish(pipeline_run_id="{{ run_id }}", score_summary_json=score_task)
 
     ingest_task >> validate_task >> train_group
+    validate_task >> check_quality_alert_task
     register_group >> score_task

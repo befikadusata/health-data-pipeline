@@ -11,4 +11,11 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY . /app
 
+# Non-root by default for standalone `docker run`. docker-compose.yml
+# overrides this at runtime (user: "${AIRFLOW_UID:-1000}:0") to match the
+# host UID instead, same reasoning as infra/Dockerfile.airflow - see
+# infra/.env's comment.
+RUN useradd --create-home --uid 1000 app
+USER app
+
 CMD ["streamlit", "run", "dashboard/app.py", "--server.address", "0.0.0.0", "--server.port", "8501"]

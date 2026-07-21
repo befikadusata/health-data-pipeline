@@ -87,6 +87,11 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile.app
+    # Runs as the host UID (same AIRFLOW_UID from infra/.env, reused here -
+    # it just means "the host user", not anything Airflow-specific) so this
+    # non-root container can read the bind-mounted repo below regardless of
+    # the host's directory permissions.
+    user: "${AIRFLOW_UID:-1000}:0"
     environment:
       DATABASE_URL: postgresql+psycopg://health:health@postgres:5432/health_pipeline
     volumes:
@@ -137,6 +142,7 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile.app
+    user: "${AIRFLOW_UID:-1000}:0"
     environment:
       DATABASE_URL: postgresql+psycopg://health:health@postgres:5432/health_pipeline
       MLFLOW_TRACKING_URI: http://mlflow:5000
@@ -160,6 +166,7 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile.dashboard
+    user: "${AIRFLOW_UID:-1000}:0"
     environment:
       DATABASE_URL: postgresql+psycopg://health:health@postgres:5432/health_pipeline
     ports:

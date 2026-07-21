@@ -60,7 +60,7 @@ class RawMonthlyReport(Base):
     drug_stock_level = Column(Numeric)
     reporting_delay_days = Column(Integer)
     source_file = Column(String)
-    run_id = Column(String)
+    run_id = Column(String, index=True)
     dag_logical_date = Column(Date)
     ingested_at = Column(DateTime, server_default=func.now())
 
@@ -76,7 +76,7 @@ class QuarantinedReport(Base):
     drug_stock_level = Column(Numeric)
     reporting_delay_days = Column(Integer)
     quarantine_reason = Column(String, nullable=False)
-    run_id = Column(String)
+    run_id = Column(String, index=True)
     dag_logical_date = Column(Date)
     quarantined_at = Column(DateTime, server_default=func.now())
 

@@ -24,6 +24,7 @@ from sqlalchemy.dialects.postgresql import insert
 from models.anomaly import build_reasons
 from models.features import (
     ANOMALY_FIELDS,
+    MIN_HISTORY_MONTHS,
     build_anomaly_features,
     build_forecast_dataset,
     load_facilities,
@@ -49,10 +50,20 @@ def score_all(engine, anomaly_model, forecast_model) -> pd.DataFrame:
     facilities = load_facilities(engine)
 
     features, z_scores = build_anomaly_features(df)
+    insufficient_history = z_scores.attrs["insufficient_history"]
+    if insufficient_history.any():
+        print(
+            f"skipping anomaly scoring for {int(insufficient_history.sum())} facility-months "
+            f"with < {MIN_HISTORY_MONTHS} months of history - z-score is undefined there"
+        )
+    anomaly_df = df.loc[~insufficient_history].reset_index(drop=True)
+    features = features.loc[~insufficient_history].reset_index(drop=True)
+    z_scores = z_scores.loc[~insufficient_history].reset_index(drop=True)
+
     raw_scores = anomaly_model.decision_function(features[ANOMALY_FIELDS])
     predictions = anomaly_model.predict(features[ANOMALY_FIELDS])
 
-    scored = df[["facility_id", "report_month"]].copy()
+    scored = anomaly_df[["facility_id", "report_month"]].copy()
     scored["is_anomaly"] = predictions == -1
     scored["anomaly_score"] = -raw_scores
     scored["anomaly_reasons"] = build_reasons(z_scores, scored["is_anomaly"])

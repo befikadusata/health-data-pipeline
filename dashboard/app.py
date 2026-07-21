@@ -35,7 +35,14 @@ def _engine():
 
 
 @st.cache_data(ttl=60)
-def load_scored() -> pd.DataFrame:
+def load_available_months() -> list:
+    query = text("SELECT DISTINCT report_month FROM scored_reports ORDER BY report_month DESC")
+    months = pd.read_sql(query, _engine())["report_month"]
+    return pd.to_datetime(months).tolist()
+
+
+@st.cache_data(ttl=60)
+def load_scored_for_month(report_month) -> pd.DataFrame:
     query = text(
         """
         SELECT
@@ -57,9 +64,10 @@ def load_scored() -> pd.DataFrame:
         JOIN facilities f ON f.facility_id = s.facility_id
         JOIN monthly_reports m
             ON m.facility_id = s.facility_id AND m.report_month = s.report_month
+        WHERE s.report_month = :report_month
         """
     )
-    df = pd.read_sql(query, _engine())
+    df = pd.read_sql(query, _engine(), params={"report_month": report_month})
     df["report_month"] = pd.to_datetime(df["report_month"])
     return df
 
@@ -80,22 +88,21 @@ def main() -> None:
     st.caption("Clinics flagged this month, and why - plain language, no jargon.")
 
     try:
-        df = load_scored()
+        months = load_available_months()
     except Exception as exc:  # noqa: BLE001 - surface a friendly message, not a stack trace
         st.error(f"Couldn't reach the warehouse: {exc}")
         st.stop()
 
-    if df.empty:
+    if not months:
         st.info("No scored data yet - run the DAG's `score` task first.")
         st.stop()
 
-    months = sorted(df["report_month"].unique(), reverse=True)
     selected_month = st.selectbox(
         "Report month",
         months,
         format_func=lambda d: pd.Timestamp(d).strftime("%B %Y"),
     )
-    month_df = df[df["report_month"] == selected_month]
+    month_df = load_scored_for_month(selected_month)
     flagged = month_df[month_df["is_anomaly"]].sort_values("anomaly_score", ascending=False)
 
     col1, col2, col3 = st.columns(3)

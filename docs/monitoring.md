@@ -3,7 +3,10 @@
 ## What's actually implemented today
 
 - **Structured logging.** `api/main.py` uses Python's `logging` module (not `print`),
-  configured at `INFO`. DAG task output is captured by Airflow's own task logs.
+  configured at `INFO`. This is scoped to the API only — `warehouse/ingest.py`,
+  `validation/run.py`, and the `models/` training/scoring scripts still use `print()`.
+  DAG task output is captured by Airflow's own task logs either way, so nothing is lost,
+  but it's not structured logging outside the API.
 - **Health checks.** `api` exposes `/health` (also reports whether models are loaded);
   `dashboard` exposes Streamlit's built-in `/_stcore/health`; `mlflow` exposes `/health`.
   All three, plus `postgres` and `airflow-webserver`, have Docker Compose healthchecks
@@ -13,8 +16,11 @@
   produces `validation/output/{run_id}_report.json` (and an HTML twin) with
   `quarantine_rate`, a breakdown of `quarantine_reasons`, `completeness_gap_count`, and an
   `alert_quarantine_rate_exceeded` boolean (fires above a 10% quarantine rate — see
-  `validation/checks.py::build_report`). Today this is a file, not a wired alert; see
-  "gaps" below.
+  `validation/checks.py::build_report`). A `check_quality_alert` DAG task
+  (`dags/health_pipeline_dag.py`) reads that flag and fails loudly (a distinct red task
+  in the Airflow UI) when it's set, without blocking `train`/`score`/`publish` — so a bad
+  batch is visible in-cluster today. It's still not routed to an external channel
+  (Slack/PagerDuty); see "gaps" below.
 - **Airflow's own retry/failure surface.** Every task retries twice with a 5-minute
   delay (`dags/health_pipeline_dag.py`'s `default_args`) before a run shows as failed in
   the Airflow UI.
@@ -30,10 +36,11 @@ should implement, listed in priority order:
    completing monthly). Airflow supports this natively via `on_failure_callback` or a
    dedicated alerting provider (Slack/PagerDuty operators).
 2. **Validation quarantine-rate spike.** `alert_quarantine_rate_exceeded` in the
-   validation report already computes this (>10% quarantined); a production version
-   would route it to a real alert instead of leaving it in a JSON file, and would trend
-   it over time (a one-off spike vs. a sustained shift in upstream data quality are very
-   different problems).
+   validation report already computes this (>10% quarantined), and `check_quality_alert`
+   already surfaces it as a failed DAG task; a production version would route that
+   failure to a real external channel instead of relying on someone watching the Airflow
+   UI, and would trend the rate over time (a one-off spike vs. a sustained shift in
+   upstream data quality are very different problems).
 3. **Anomaly rate drift.** The anomaly detector assumes ~5% of clinic-months warrant a
    look (`CONTAMINATION = 0.05` in `models/anomaly.py`) — this is a fixed business
    assumption, not something IsolationForest recalibrates on its own. If the flagged

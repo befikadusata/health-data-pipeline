@@ -5,3 +5,8 @@ __pycache__
 .ruff_cache
 mlruns
 mlflow.db
+infra/.env
+tests
+docs
+project-brief.md
+README.md

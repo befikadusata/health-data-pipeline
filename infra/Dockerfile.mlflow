@@ -10,6 +10,12 @@ RUN pip install --no-cache-dir mlflow==3.14.0
 WORKDIR /mlflow
 EXPOSE 5000
 
+# Non-root: chown before switching so the mlflow_data volume (initialized
+# from this directory's contents on first mount) is owned by this user,
+# not root - same reasoning as infra/Dockerfile.app.
+RUN useradd --create-home --uid 1000 mlflow && chown mlflow:mlflow /mlflow
+USER mlflow
+
 CMD ["mlflow", "server", \
      "--backend-store-uri", "sqlite:////mlflow/mlflow.db", \
      "--default-artifact-root", "mlflow-artifacts:/", \

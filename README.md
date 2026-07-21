@@ -212,6 +212,12 @@ next quarter — no jargon, meant to be readable by a non-technical program mana
   `docs/monitoring.md` for the full gap list.
 - **Terraform stub covers only the `api` service**, not the rest of the stack (see
   `infra/terraform/README.md`).
+- **Existing `mlflow_data` volumes predate the non-root `mlflow` user** in
+  `infra/Dockerfile.mlflow`. If you ran `docker compose up mlflow` before that change,
+  the volume is still root-owned and writes will fail with `readonly database` until you
+  run this once:
+  `docker run --rm -v infra_mlflow_data:/mlflow python:3.12-slim chown -R 1000:1000 /mlflow`.
+  A fresh clone/volume doesn't need this — only pre-existing local checkouts.
 
 ## Recommended next steps for a real production version
 

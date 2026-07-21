@@ -54,6 +54,27 @@ docker exec infra-airflow-scheduler-1 airflow dags trigger health_pipeline
 Architecture and the DAG's task graph: [`docs/architecture.md`](docs/architecture.md).
 Alerting design: [`docs/monitoring.md`](docs/monitoring.md).
 
+### What it looks like
+
+![Dashboard: clinics flagged this month, and why](docs/images/dashboard.png)
+
+```
+$ curl -s http://localhost:8000/facilities/CL-043/score | python3 -m json.tool
+{
+    "facility_id": "CL-043",
+    "report_month": "2025-12-01",
+    "is_anomaly": true,
+    "anomaly_score": 0.08199125630799808,
+    "anomaly_reasons": [
+        {"field": "suppression_pct", "z_score": 2.48, "direction": "high"},
+        {"field": "reporting_delay_days", "z_score": 3.06, "direction": "high"}
+    ],
+    "forecast_next_quarter_suppression_pct": 80.37204207405985,
+    "model_version_anomaly": "2",
+    "model_version_forecast": "2"
+}
+```
+
 ## Data & reproducibility
 
 `data_gen/generate.py` produces ~50 facilities × 24 months (~1,200 base rows) of

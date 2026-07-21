@@ -26,7 +26,9 @@ it would need a cross-DAG sensor for no real benefit at this scale.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -45,40 +47,31 @@ default_args = {
 }
 
 
-def _trailing_json_block(stdout: str) -> str:
-    """mlflow prints its own 'View run'/'View experiment' banners to stdout
-    ahead of each module's own pretty-printed JSON result block, so the
-    result isn't the whole of stdout - scan from the end for the last
-    balanced {...} block instead."""
-    depth = 0
-    end = None
-    for i in range(len(stdout) - 1, -1, -1):
-        if stdout[i] == "}":
-            if depth == 0:
-                end = i + 1
-            depth += 1
-        elif stdout[i] == "{":
-            depth -= 1
-            if depth == 0:
-                return stdout[i:end]
-    return stdout
+def _run_module(module: str, *args: str, json_output: bool = False) -> str:
+    """Runs `{PROJECT_PYTHON} -m {module} {args}` in the isolated venv.
 
+    When json_output=True, passes --output-file so the module writes its
+    structured result straight to a temp file that's read back directly -
+    mlflow (and other libs) print their own banners to stdout too, so
+    scraping the result out of stdout would be fragile.
+    """
+    output_path = None
+    cmd = [PROJECT_PYTHON, "-m", module, *args]
+    if json_output:
+        fd, output_path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        cmd += ["--output-file", output_path]
 
-def _run_module(module: str, *args: str) -> str:
-    """Runs `{PROJECT_PYTHON} -m {module} {args}` in the isolated venv and
-    returns its trailing JSON result block, so callers that need structured
-    output can json.loads() the return value."""
-    result = subprocess.run(
-        [PROJECT_PYTHON, "-m", module, *args],
-        cwd=PROJECT_DIR,
-        capture_output=True,
-        text=True,
-    )
-    print(result.stdout)
-    if result.returncode != 0:
-        print(result.stderr)
-        raise RuntimeError(f"{module} failed with exit code {result.returncode}")
-    return _trailing_json_block(result.stdout)
+    try:
+        result = subprocess.run(cmd, cwd=PROJECT_DIR, capture_output=True, text=True)
+        print(result.stdout)
+        if result.returncode != 0:
+            print(result.stderr)
+            raise RuntimeError(f"{module} failed with exit code {result.returncode}")
+        return Path(output_path).read_text() if json_output else result.stdout
+    finally:
+        if output_path:
+            Path(output_path).unlink(missing_ok=True)
 
 
 with DAG(
@@ -116,11 +109,11 @@ with DAG(
 
         @task(task_id="train_anomaly")
         def train_anomaly() -> str:
-            return json.loads(_run_module("models.anomaly"))["mlflow_run_id"]
+            return json.loads(_run_module("models.anomaly", json_output=True))["mlflow_run_id"]
 
         @task(task_id="train_forecast")
         def train_forecast() -> str:
-            return json.loads(_run_module("models.forecast"))["mlflow_run_id"]
+            return json.loads(_run_module("models.forecast", json_output=True))["mlflow_run_id"]
 
         anomaly_run_id = train_anomaly()
         forecast_run_id = train_forecast()
@@ -135,6 +128,7 @@ with DAG(
                 train_run_id,
                 "--model-name",
                 "health-anomaly-detector",
+                json_output=True,
             )
             return json.loads(out)["version"]
 
@@ -146,6 +140,7 @@ with DAG(
                 train_run_id,
                 "--model-name",
                 "health-suppression-forecaster",
+                json_output=True,
             )
             return json.loads(out)["version"]
 
@@ -155,7 +150,12 @@ with DAG(
     @task
     def score(pipeline_run_id: str, logical_date_str: str) -> str:
         return _run_module(
-            "models.score", "--run-id", pipeline_run_id, "--dag-logical-date", logical_date_str
+            "models.score",
+            "--run-id",
+            pipeline_run_id,
+            "--dag-logical-date",
+            logical_date_str,
+            json_output=True,
         )
 
     @task

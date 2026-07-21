@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 from sqlalchemy.dialects.postgresql import insert
@@ -112,6 +113,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Score monthly_reports with registered models")
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--dag-logical-date", default=date.today().isoformat())
+    parser.add_argument("--output-file", help="also write the JSON result here")
     args = parser.parse_args()
 
     configure_mlflow()
@@ -133,6 +135,8 @@ def main() -> None:
         "forecast_model_version": str(forecast_version),
     }
     print(json.dumps(summary, indent=2))
+    if args.output_file:
+        Path(args.output_file).write_text(json.dumps(summary))
 
 
 if __name__ == "__main__":

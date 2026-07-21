@@ -12,8 +12,10 @@ useful, not an abstract R^2.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
+from pathlib import Path
 
 import mlflow
 import mlflow.sklearn
@@ -121,5 +123,11 @@ def train_and_evaluate() -> dict:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Train and evaluate the forecasting model")
+    parser.add_argument("--output-file", help="also write the JSON result here")
+    args = parser.parse_args()
+
     metrics = train_and_evaluate()
     print(json.dumps(metrics, indent=2))
+    if args.output_file:
+        Path(args.output_file).write_text(json.dumps(metrics))

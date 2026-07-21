@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 import mlflow
 
@@ -32,11 +33,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Register a trained run's model")
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--model-name", required=True)
+    parser.add_argument("--output-file", help="also write the JSON result here")
     args = parser.parse_args()
 
     configure_mlflow()
     version = register_run_model(args.run_id, args.model_name)
-    print(json.dumps({"model_name": args.model_name, "run_id": args.run_id, "version": version}))
+    result = {"model_name": args.model_name, "run_id": args.run_id, "version": version}
+    print(json.dumps(result))
+    if args.output_file:
+        Path(args.output_file).write_text(json.dumps(result))
 
 
 if __name__ == "__main__":

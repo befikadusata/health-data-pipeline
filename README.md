@@ -28,6 +28,8 @@ load suppression rate, drug stock level, reporting delay). This pipeline:
 
 ```
 cd infra
+./generate-secret.sh  # optional: puts a random AIRFLOW_SECRET_KEY in infra/.env
+                       # instead of every clone sharing the placeholder default
 docker compose up -d --build
 ```
 
@@ -235,8 +237,12 @@ next quarter — no jargon, meant to be readable by a non-technical program mana
 6. Validate the anomaly detector and forecaster against a real (larger, longer-history)
    dataset before trusting the reported metrics at production scale.
 7. Rotate every credential in `infra/docker-compose.yml` before any real deployment —
-   the Postgres passwords, Airflow's `admin/admin` login, and
-   `AIRFLOW__WEBSERVER__SECRET_KEY` are hardcoded for local-demo convenience only.
+   the Postgres passwords and Airflow's `admin/admin` login are hardcoded for
+   local-demo convenience only. `AIRFLOW__WEBSERVER__SECRET_KEY` can already be
+   randomized per checkout via `infra/generate-secret.sh` (see Quickstart); the
+   Postgres/Airflow-login credentials still need a real secrets mechanism (e.g.
+   Docker/Compose secrets or a vault) since they're also embedded in connection-string
+   env vars used across several services.
 
 ## Repo layout
 

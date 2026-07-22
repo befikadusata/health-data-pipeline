@@ -50,6 +50,13 @@ jobs:
           uv export --no-hashes --no-dev --format requirements-txt -o infra/requirements.txt
           git diff --exit-code -- infra/requirements.txt
 
+      - name: Audit dependencies for known vulnerabilities
+        # Audits the environment uv sync just installed (Python 3.12) rather
+        # than re-resolving from infra/requirements.txt in a fresh env - the
+        # latter picks whatever Python `uvx` defaults to, which doesn't
+        # necessarily match this project's >=3.12 pin.
+        run: uv run --with pip-audit pip-audit
+
       - name: Lint
         run: uv run ruff check .
 

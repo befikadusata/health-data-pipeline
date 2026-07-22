@@ -19,7 +19,11 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/project/dags
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
-    AIRFLOW__WEBSERVER__SECRET_KEY: health-pipeline-demo-secret-key
+    # Overridable via AIRFLOW_SECRET_KEY in infra/.env - run
+    # infra/generate-secret.sh once to put a random per-checkout value there
+    # instead of every clone sharing this placeholder. See README's
+    # Limitations section.
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-health-pipeline-demo-secret-key}
     DATABASE_URL: postgresql+psycopg://health:health@postgres:5432/health_pipeline
     MLFLOW_TRACKING_URI: http://mlflow:5000
   volumes:

@@ -1,5 +1,16 @@
 # health-data-pipeline
 
+[![CI](https://github.com/befikadusata/health-data-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/befikadusata/health-data-pipeline/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?logo=streamlit&logoColor=white)
+![Airflow](https://img.shields.io/badge/Airflow-017CEE?logo=apacheairflow&logoColor=white)
+![MLflow](https://img.shields.io/badge/MLflow-0194E2?logo=mlflow&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![scikit-learn](https://img.shields.io/badge/scikit--learn-F7931E?logo=scikitlearn&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-7B42BC?logo=terraform&logoColor=white)
+
 An infra-first ML platform demo built around a synthetic health-program data warehouse:
 data ingestion, data-quality validation, an anomaly detector, a forecasting model, and
 the MLOps/orchestration/serving layer around them. This is a portfolio/interview
@@ -9,6 +20,33 @@ health/NGO domain — depth lives in reliability and structure, not model novelt
 
 **No real patient data is used anywhere in this repo.** Everything is synthetically
 generated (see "Data & reproducibility" below).
+
+## What this demonstrates
+
+What to notice on a fast pass — each point is expanded in its own section below, not
+just asserted here:
+
+- **Idempotent by design.** Every DAG task can re-run for any period without corrupting
+  the warehouse — upsert-on-conflict writes, logical-date parameterization (never
+  `now()`), full-table recompute where a feature depends on cross-row history. See "The
+  idempotency invariant."
+- **Honest metrics, not tuned ones.** The anomaly detector's `contamination` is fixed as
+  a business assumption and never tuned against the evaluation labels, so the reported
+  precision (0.57) and recall (0.54) are real numbers on a small synthetic set, not
+  numbers massaged to look good. See "Models."
+- **Quarantine, don't fail.** Data-quality validation isolates bad rows and keeps the
+  pipeline running instead of hard-failing a whole batch over a handful of dirty
+  records, with an alertable quarantine-rate threshold. See "Data-quality validation."
+- **Explainability matched to the model.** Per-feature z-scores for the unsupervised
+  anomaly detector — more honest than bolting SHAP onto IsolationForest — and SHAP for
+  the supervised forecaster. See "Models."
+- **CI that checks for real problems.** Lockfile-drift detection
+  (`infra/requirements.txt` vs `uv.lock`) and `pip-audit` dependency-vulnerability
+  scanning run on every push, alongside lint/test/build across all four Docker images.
+  See "MLOps, CI/CD, IaC."
+- **Infrastructure scoped honestly.** The Terraform stub deliberately covers only the
+  deployment shape (ECR + a single-task Fargate service) instead of faking a
+  fully-applied production environment. See "MLOps, CI/CD, IaC" and "Limitations."
 
 ## What it does, in plain language
 
@@ -188,10 +226,12 @@ next quarter — no jargon, meant to be readable by a non-technical program mana
 - **MLflow** tracks every run and backs a real Model Registry (SQLite-backed tracking
   store; artifacts proxied through the tracking server rather than a shared filesystem,
   since every service that needs a model is a separate container).
-- **CI** (`.github/workflows/ci.yml`): a single lint → test → build path — ruff, pytest
-  (see `tests/`, covering the validation suite, feature engineering, the anomaly
-  detector's explanation logic, and data-generator reproducibility), and a Docker build
-  of the `api` image.
+- **CI** (`.github/workflows/ci.yml`): a single lint → test → build path against a real
+  Postgres service — checks `infra/requirements.txt` matches `uv.lock`, runs `pip-audit`
+  against installed dependencies, lints with ruff, applies Alembic migrations, runs
+  pytest (see `tests/`, covering the validation suite, feature engineering, the anomaly
+  detector's explanation logic, and data-generator reproducibility), and builds all four
+  Docker images (`api`, `dashboard`, `airflow`, `mlflow`).
 - **IaC** (`infra/terraform/`): a minimal, intentionally-unapplied stub — an ECR
   repository and a single-task Fargate service for the `api` image — proving out the
   cloud/containerized deployment shape without standing up the whole stack in a real

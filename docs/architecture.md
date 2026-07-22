@@ -113,7 +113,7 @@ MLflow artifacts are proxied through the tracking server (`mlflow-artifacts:/` +
 | Serving API | FastAPI, loads the registered model, `/health` + scoring endpoint | `api/` |
 | Dashboard | Streamlit, "clinics flagged this month and why" | `dashboard/` |
 | Infra | Dockerfiles, docker-compose, a Terraform stub for the api service | `infra/` |
-| CI | Lint, test, build on push/PR | `.github/workflows/` |
+| CI | Dependency drift + vulnerability checks, lint, test (against a real Postgres), build all four images | `.github/workflows/` |
 
 ## Deployment note
 
